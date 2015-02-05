@@ -78,6 +78,14 @@ public class Solution {
             return false;
         }
 
+        public int extractMember() {
+            if (this.size == 0) return Integer.MAX_VALUE;
+            int ret = this.last;
+            this.last--;
+            this.size--;
+            return ret;
+        }
+
         public Team merge(Team m) {
             if (this.first == m.getLast() + 1) {
                 return new Team(m.getFirst(),this.last);
@@ -126,27 +134,7 @@ public class Solution {
         }
 
         public void addMember(int m) {
-            BinomialHeap<Team> tempTeams = new BinomialHeap<Team>();
-            //repeat until member added or all teams checked
-            while(this.teams.getMin() != null) {
-                //Get the smallest team
-                Team team = this.teams.deleteMin();
-                //Check if new member can be added to the team
-                if (team.addMember(m)) {
-                    this.teams.insert(team); //reinsert the updated team
-                    break;
-                }
-                //else add to temporary team list
-                tempTeams.insert(team);
-
-            }
-            //if new member is not eligible for any team, make new team
-            if (this.teams.getMin() == null) {
-                tempTeams.insert(new Team(m)); //add team to Teams heap
-                this.teams = tempTeams;  //replace empty teams heap
-            }
-            //merge new and old teams heaps
-            else this.teams.mergeHeap(tempTeams);
+            this.teams.insert(new Team(m));
         }
 
         //attempt to merge the smallest teams into larger teams.  If the smallest team cannot be merged, stop
@@ -154,10 +142,11 @@ public class Solution {
             BinomialHeap<Team> tmpTeams = new BinomialHeap<Team>();
             // Get the smallest team
             Team a = this.teams.deleteMin();
+            Team b;
             //  While there are teams in the main heap
             while (this.teams.getMin() != null) {
                 //Get smallest team left
-                Team b = this.teams.deleteMin();
+                b = this.teams.deleteMin();
                 Team newTeam = a.merge(b);
                 //if teams merge, insert merged team into main heap
                 if (newTeam != null) {
@@ -173,6 +162,34 @@ public class Solution {
             //merge main and temp heaps
             this.teams = tmpTeams;
             if (a != null) this.teams.insert(a);
+
+            tmpTeams = new BinomialHeap<Team>();
+            BinomialHeap<Team> heapCopy = new BinomialHeap<Team>();
+
+            //Attempt to break smallest team and redistribute members
+            a = this.teams.deleteMin();
+            heapCopy.insert(new Team(a.getFirst(),a.getLast()));
+            int m;
+            while ((m = a.extractMember()) != Integer.MAX_VALUE) { //Go until team a is empty
+                //get smallest team in heap
+                b = this.teams.deleteMin();
+                //if no more teams in heap, then this member can't be reassigned
+                if (b == null) {
+                    this.teams = heapCopy; //These teams can't be fully optimized, restore state
+                    return; //finished
+                }
+                //put copy onto copy heap
+                heapCopy.insert(new Team(b.getFirst(),b.getLast()));
+                //try to add member to min team
+                if (b.addMember(m)) {
+                    this.teams.insert(b);   //insert into min team
+                }
+                //otherwise put this team aside
+                else tmpTeams.insert(b);
+            }
+            //Smallest team has been broken up
+            this.teams.mergeHeap(tmpTeams);
+
         }
 
         public int getSmallTeam() {
