@@ -13,6 +13,9 @@ public class Solution {
         Solution solution = new Solution();
     }
 
+    private List<TeamMember> members;
+    private List<Team> teams;
+
     public Solution() {
         Scanner in = new Scanner(System.in);
         int testNos;
@@ -31,333 +34,291 @@ public class Solution {
         }
 
         for (int test : tests.keySet()) {
-            System.out.println(formTeams(tests.get(test)));
+            System.out.println(smallestTeam(tests.get(test)));
         }
     }
 
 
-    private int formTeams(List<Integer> members) {
+    private int smallestTeam(List<Integer> members) {
         if (members.size() == 0) return 0;
-
-        Teams teams = new Teams(members.size());
-        for (int memberSkill : members) {
-            teams.addMember(memberSkill);
-        }
-        teams.mergeTeams();
-        return teams.getSmallTeam();
+        this.members = initializeMembers(members);
+        this.teams = initializeTeams(this.members);
+        return getSmallestTeam();
     }
 
-    private class Team implements Comparable<Team> {
-        private int first;
-        private int last;
-        private int size;
+    private int getSmallestTeam() {
+        PriorityQueue<Team> minTeam = new PriorityQueue<Team>();
+        minTeam.addAll(this.teams);
+        boolean changed = true;
+        while (changed) {
+            Team min = minTeam.poll();
 
-        public Team(int first) {
-            this.first = first;
-            this.last = first;
-            this.size = 1;
         }
+    }
 
-        public Team(int first,int last) {
-            this.first = first;
-            this.last = last;
-            this.size = last - first + 1;
-        }
-
-        public boolean addMember(int m) {
-            if (this.first == m + 1) {
-                this.first = m;
-                this.size++;
-                return true;
+    private List<Team> initializeTeams(List<TeamMember> members) {
+        List<Team> teams = new ArrayList<Team>(members.size());
+        for (TeamMember member : members) {
+            Team team = new Team(member.getId());
+            teams.add(team);
+            try {
+                member.setTeam(team);
+            } catch (TeamMember.NullTeamException e) {
+                System.out.println("Null team when setting a team to member " + member.getId());
+                e.printStackTrace();
+                System.exit(100);
+            } catch (Team.DeleteMemberException e) {
+                System.out.println("Problem when setting a team to member " + member.getId());
+                e.printStackTrace();
+                System.exit(100);
+            } catch (Team.AddMemberException e) {
+                System.out.println("Problem when team when setting a team to member " + member.getId());
+                e.printStackTrace();
+                System.exit(100);
             }
-            else if (this.last == m - 1){
-                this.last = m;
-                this.size++;
-                return true;
+        }
+        return teams;
+    }
+
+    private List<TeamMember> initializeMembers(List<Integer> members) {
+        Map<Integer,List<TeamMember>> memberSkills = new HashMap<Integer, List<TeamMember>>();
+        List<TeamMember> teamMembers = new ArrayList<TeamMember>(members.size());
+
+        int id = 0;
+        for (int skill : members) {
+            TeamMember member = new TeamMember(id,skill);
+            id++;
+
+            if (!memberSkills.containsKey(skill)) {
+                memberSkills.put(skill, new ArrayList<TeamMember>());
             }
-            return false;
+            memberSkills.get(skill).add(member);
+            teamMembers.add(member);
+
+            try {
+                for (TeamMember adj : memberSkills.get(skill - 1)) {
+                    member.linkAdjacent(adj);
+                }
+            } catch (NullPointerException e) {
+                //Let it continue
+            } catch (TeamMember.InvalidAdjacentException e) {
+                System.out.println("TeamMember skill does not match list");
+                e.printStackTrace();
+                System.exit(100);
+            }
+
+            try {
+                for (TeamMember adj : memberSkills.get(skill + 1)) {
+                    member.linkAdjacent(adj);
+                }
+            } catch (NullPointerException e) {
+                //let it continue
+            } catch (TeamMember.InvalidAdjacentException e) {
+                System.out.println("TeamMember skill does not match list");
+                e.printStackTrace();
+                System.exit(100);
+            }
         }
 
-        public int extractMember() {
-            if (this.size == 0) return Integer.MAX_VALUE;
-            int ret = this.last;
-            this.last--;
-            this.size--;
-            return ret;
+        return teamMembers;
+    }
+
+    public class Team implements Comparable<Team> {
+
+
+        private int id;
+        private Deque<TeamMember> members = new ArrayDeque<TeamMember>();
+
+        public Team(int id) {
+            this.id = id;
         }
 
-        public Team merge(Team m) {
-            if (this.first == m.getLast() + 1) {
-                return new Team(m.getFirst(),this.last);
-            }
-            else if (this.last == m.getFirst() - 1) {
-                return new Team(this.getFirst(),m.getLast());
-            }
-            else return null;
-        }
-
-        public int getFirst(){
-            return this.first;
-        }
-        public int getLast() {
-            return this.last;
-        }
         public int getSize() {
-            return this.size;
+            return this.members.size();
         }
 
-
-        @Override
-        public int compareTo(Team o) {
-            return this.getSize() - o.getSize();
-        }
-    }
-
-    private class TeamComparator implements Comparator<Team> {
-        public TeamComparator() {}
-
-        public int compare(Team a, Team b) {
-            return a.getSize() - b.getSize();
+        public int getId() {
+            return id;
         }
 
-        public boolean equals(Object o) {
-            return this == o;
-        }
-    }
-
-    private class Teams {
-        private int smallTeam = Integer.MAX_VALUE;
-        private BinomialHeap<Team> teams;
-
-        public Teams(int memberCount) {
-            this.teams = new BinomialHeap<Team>();
-        }
-
-        public void addMember(int m) {
-            this.teams.insert(new Team(m));
-        }
-
-        //attempt to merge the smallest teams into larger teams.  If the smallest team cannot be merged, stop
-        public void mergeTeams() {
-            BinomialHeap<Team> tmpTeams = new BinomialHeap<Team>();
-            // Get the smallest team
-            Team a = this.teams.deleteMin();
-            Team b;
-            //  While there are teams in the main heap
-            while (this.teams.getMin() != null) {
-                //Get smallest team left
-                b = this.teams.deleteMin();
-                Team newTeam = a.merge(b);
-                //if teams merge, insert merged team into main heap
-                if (newTeam != null) {
-                    this.teams.insert(newTeam);
-                    //reset the clock by merging teams with tmpTeams
-                    this.teams.mergeHeap(tmpTeams);
-                    tmpTeams = new BinomialHeap<Team>();
-                    a = this.teams.deleteMin();  //get new min
-                }
-                //else put team into temp heap
-                else tmpTeams.insert(b);
+        public void addMember(int skill, TeamMember m) throws AddMemberException {
+            if ( m.getSkill() == this.members.peekFirst().getSkill() - 1) {
+                members.addFirst(m);
             }
-            //merge main and temp heaps
-            this.teams = tmpTeams;
-            if (a != null) this.teams.insert(a);
-
-            tmpTeams = new BinomialHeap<Team>();
-            BinomialHeap<Team> heapCopy = new BinomialHeap<Team>();
-
-            //Attempt to break smallest team and redistribute members
-            a = this.teams.deleteMin();
-            heapCopy.insert(new Team(a.getFirst(),a.getLast()));
-            int m;
-            while ((m = a.extractMember()) != Integer.MAX_VALUE) { //Go until team a is empty
-                //get smallest team in heap
-                b = this.teams.deleteMin();
-                //if no more teams in heap, then this member can't be reassigned
-                if (b == null) {
-                    this.teams = heapCopy; //These teams can't be fully optimized, restore state
-                    return; //finished
-                }
-                //put copy onto copy heap
-                heapCopy.insert(new Team(b.getFirst(),b.getLast()));
-                //try to add member to min team
-                if (b.addMember(m)) {
-                    this.teams.insert(b);   //insert into min team
-                }
-                //otherwise put this team aside
-                else tmpTeams.insert(b);
+            else if ( m.getSkill() == this.members.peekLast().getSkill() + 1) {
+                members.addLast(m);
             }
-            //Smallest team has been broken up
-            this.teams.mergeHeap(tmpTeams);
+            else throw new AddMemberException();
+        }
+
+        public void delMember(TeamMember m) throws DeleteMemberException {
+            if ( m == this.members.peekFirst()) {
+                members.pollFirst();
+            }
+            else if ( m == this.members.peekLast()) {
+                members.pollLast();
+            }
+            else throw new DeleteMemberException();
+        }
+
+        public int compareTo(Team t) {
+            return this.getSize() - t.getSize();
+        }
+
+        private class AddMemberException extends Exception {
 
         }
 
-        public int getSmallTeam() {
-            return this.teams.getMin().getSize();
+        private class DeleteMemberException extends Exception {
         }
     }
 
-    private class BinomialHeap<E extends Comparable<E>> {
+    public class TeamMember {
+        private int id;
+        private int skill;
+        private Team team;
+        private List<NodeLink> links = new ArrayList<NodeLink>();
 
-        //Binomial Heap node helper class
-        private class BinomialHeapNode<T extends Comparable<T>> implements Comparable<BinomialHeapNode<T>> {
-
-            private T key;
-            private int size;
-            private int order;
-            private PriorityQueue<BinomialHeapNode<T>> children;
-
-            public BinomialHeapNode(T k){
-                this.key = k;
-                this.order = 0;
-                this.size = 1;
-                this.children = new PriorityQueue<BinomialHeapNode<T>>();
-            }
-
-            public void addChild(BinomialHeapNode<T> node) {
-                children.add(node);
-                this.order++;
-                this.size += node.size;
-            }
-
-            public BinomialHeapNode<T> getMin() {
-                BinomialHeapNode<T> child = this.children.poll();
-                if (child != null) this.size -= child.size;
-                return child;
-            }
-
-            @Override
-            public int compareTo(BinomialHeapNode<T> o) {
-                return this.getKey().compareTo(o.getKey());
-            }
-            public T getKey() {
-                return key;
-
-            }
-
-            public void setKey(T key) {
-                this.key = key;
-            }
-
-            public void setOrder(int order) {
-                this.order = order;
-            }
-
-            public PriorityQueue<BinomialHeapNode<T>> getChildren() {
-                return children;
-            }
-
-            public void setChildren(PriorityQueue<BinomialHeapNode<T>> children) {
-                this.children = children;
-            }
-
-            public int getOrder() {
-                return order;
-            }
-
-            public int getSize() {
-                return this.size;
-            }
-        }
-        //End Binomial Heap Node Helper class
-
-        private Map<Integer,BinomialHeapNode<E>> forest;
-        private PriorityQueue<BinomialHeapNode<E>> min;
-        private int size;
-
-        //Public API
-
-        public BinomialHeap() {
-            this.forest = new HashMap<Integer, BinomialHeapNode<E>>();
-            this.size = 0;
-        }
-        public BinomialHeap(E k) {
-            BinomialHeapNode<E> node = new BinomialHeapNode<E>(k);
-            this.forest = new HashMap<Integer,BinomialHeapNode<E>>();
-            forest.put(0, node);
-            this.size = 1;
-            findMin();
+        public TeamMember(int id, int skill) {
+            this.id = id;
+            this.skill = skill;
         }
 
-        public BinomialHeap(BinomialHeapNode<E> tree) {
-            this.forest = new HashMap<Integer,BinomialHeapNode<E>>();
-            forest.put(tree.getOrder(),tree);
-            this.size = tree.getSize();
-            findMin();
+
+        public int getTeamSize() {
+            return this.team.getSize();
         }
 
-        public E getMin() {
-            if (this.size == 0) return null;
-            return this.min.peek().getKey();
+        public int getSkill() {
+            return this.skill;
         }
 
-        public E deleteMin() {
-            if (this.size == 0) return null;
-            BinomialHeapNode<E> ret = this.min.poll();
-            this.size -= ret.getSize();
-            this.forest.remove(ret.getOrder());
-            BinomialHeapNode<E> tree;
-            while ( (tree = ret.getMin()) != null){
-                this.mergeHeap(new BinomialHeap<E>(tree));
+        public void linkAdjacent(TeamMember m) throws InvalidAdjacentException {
+            if (this.getSkill() == m.getSkill() + 1 || this.getSkill() == m.getSkill()-1) {
+                links.add(new NodeLink(this,m));
             }
-            return ret.getKey();
+            else throw new InvalidAdjacentException();
         }
 
-        public void insert(E k) {
-            BinomialHeap<E> q = new BinomialHeap<E>(k);
-            this.mergeHeap(q);
+        public void acceptLink(NodeLink n) {
+            this.links.add(n);
         }
 
-        private void mergeHeap(BinomialHeap<E> heap) {
-            //Iterate through the merging heap's forest
-            for (int order : heap.forest.keySet()){
-                //check if my forest contains tree of this order
-                if (this.forest.containsKey(order)) {
-                    //Merge merging heap k-order tree with my k-order tree
-                    BinomialHeapNode<E> newTree = mergeTree(this.forest.get(order), heap.forest.get(order));
-                    //check if my forest contains a k+1 order tree
-                    while (this.forest.containsKey(newTree.getOrder())) {
-                        int newOrder = newTree.getOrder(); //order k+1
-                        //Merge newTree with existing k+1 order tree
-                        newTree = mergeTree(newTree,this.forest.get(newOrder));
-                        //remove old k+1-order tree
-                        this.forest.remove(newOrder);
-                        //repeat until unused order found
-                    }
-                    //remove old k-order tree
-                    this.forest.remove(order);
-                    //add new tree to my forest
-                    this.forest.put(newTree.getOrder(),newTree);
-                }
-                // if no k-order tree, add directly to forest
-                else this.forest.put(order,heap.forest.get(order));
+        public int getId() {
+            return this.id;
+        }
+
+        public Team getTeam() {
+            return team;
+        }
+
+        public void setTeam(Team team) throws NullTeamException, Team.DeleteMemberException, Team.AddMemberException {
+            if (team == null) {
+                throw new NullTeamException();
             }
-            this.size += heap.size;
-            findMin(); //rebuild min list
-        }
-
-        //End public API
-
-        //Private helper methods
-        private BinomialHeapNode<E> mergeTree(BinomialHeapNode<E> p, BinomialHeapNode<E> q) {
-            //If p is less than q
-            if (p.compareTo(q) <= 0) {
-                p.addChild(q);
-                return p;
+            try {
+                if (this.team != null)
+                    this.team.delMember(this);
+            } catch (Team.DeleteMemberException e) {
+                throw e;
             }
-            else {
-                q.addChild(p);
-                return q;
+
+            this.team = team;
+            try {
+                this.team.addMember(this.getSkill(), this);
+            } catch (Team.AddMemberException e) {
+                throw e;
             }
         }
 
-        private void findMin() {
-            min = new PriorityQueue<BinomialHeapNode<E>>();
-            for (BinomialHeapNode<E> tree : forest.values()) {
-                min.add(tree);
-            }
+        public class InvalidAdjacentException extends Exception {
         }
 
+        private class NullTeamException extends Exception {
+        }
     }
 
+    public class NodeLink implements Comparable<NodeLink> {
+
+        private TeamMember node;
+        private NodeLink link;
+
+        public NodeLink(TeamMember a, TeamMember b) {
+            this.node = a;
+            linkTeamMember(b);
+        }
+
+        public NodeLink(TeamMember m) {
+            this.node = m;
+        }
+
+        public int getWeight() throws IncompleteLinkException {
+            try {
+                return this.node.getTeamSize() - this.link.getNode().getTeamSize();
+            } catch (NullPointerException e) {
+                throw new IncompleteLinkException();
+            }
+        }
+
+
+        public void linkTeamMember(TeamMember m) {
+            NodeLink newNode = new NodeLink(m);
+            this.makeLink(newNode);
+        }
+
+        public void makeLink(NodeLink n) {
+            this.link = n;
+            n.acceptLink(this);
+        }
+
+        public TeamMember getNode() {
+            return this.node;
+        }
+
+        public TeamMember getAdjacent() throws IncompleteLinkException {
+            try {
+                return this.link.getNode();
+            } catch (NullPointerException e) {
+                throw new IncompleteLinkException();
+            }
+        }
+
+        public void acceptLink(NodeLink n) {
+            this.link = n;
+            this.node.acceptLink(n);
+        }
+
+        public void migrateTo() throws IncompleteLinkException, Team.DeleteMemberException, Team.AddMemberException {
+            try {
+                this.node.setTeam(this.link.getNode().getTeam());
+            } catch (TeamMember.NullTeamException e) {
+                System.out.println("Null team when adding a team to member " + this.node.getId());
+                e.printStackTrace();
+                System.exit(100);
+            } catch (NullPointerException e) {
+                throw new IncompleteLinkException();
+            }
+        }
+
+        public void migrateNodeFrom() throws IncompleteLinkException, Team.DeleteMemberException, Team.AddMemberException {
+            try {
+                this.link.migrateTo();
+            } catch (NullPointerException e) {
+                throw new IncompleteLinkException();
+            }
+        }
+
+        public int compareTo(NodeLink n) {
+            try {
+                return this.getWeight() - this.link.getWeight();
+            } catch (IncompleteLinkException e) {
+                System.out.println("No end on link from member " + this.node.getId());
+            }
+
+            return Integer.MAX_VALUE;
+        }
+
+        private class IncompleteLinkException extends Exception {
+        }
+    }
 }
