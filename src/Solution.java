@@ -46,13 +46,28 @@ public class Solution {
         return getSmallestTeam();
     }
 
-    private int getSmallestTeam() {
-        PriorityQueue<Team> minTeam = new PriorityQueue<Team>();
-        minTeam.addAll(this.teams);
-        boolean changed = true;
-        while (changed) {
-            Team min = minTeam.poll();
+    private void consolidateTeams(List<TeamMember> members) {
+        List<TeamMember> memberForest = new ArrayList<TeamMember>();
+        List<TeamMember> memberCopy = new ArrayList<TeamMember>();
+        memberCopy.addAll(members);
 
+        while (!memberCopy.isEmpty()) {
+            TeamMember member = memberCopy.remove(0);
+            memberForest.add(member);
+            try {
+                NodeLink link = member.getMinNeighbor();
+                TeamMember neighbor = link.getAdjacent();
+                memberCopy.remove(neighbor);
+                link.migrateTo();
+
+            } catch (NodeLink.IncompleteLinkException e) {
+                e.printStackTrace();
+                System.exit(100);
+            } catch (TeamMember.NoLinkException e) {
+                e.printStackTrace();
+            } catch (TeamMember.NoExternalLinkException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -63,14 +78,6 @@ public class Solution {
             teams.add(team);
             try {
                 member.setTeam(team);
-            } catch (TeamMember.NullTeamException e) {
-                System.out.println("Null team when setting a team to member " + member.getId());
-                e.printStackTrace();
-                System.exit(100);
-            } catch (Team.DeleteMemberException e) {
-                System.out.println("Problem when setting a team to member " + member.getId());
-                e.printStackTrace();
-                System.exit(100);
             } catch (Team.AddMemberException e) {
                 System.out.println("Problem when team when setting a team to member " + member.getId());
                 e.printStackTrace();
@@ -127,7 +134,7 @@ public class Solution {
 
 
         private int id;
-        private Deque<TeamMember> members = new ArrayDeque<TeamMember>();
+        private ArrayList<TeamMember> members = new ArrayList<TeamMember>();
 
         public Team(int id) {
             this.id = id;
@@ -141,25 +148,44 @@ public class Solution {
             return id;
         }
 
+
         public void addMember(int skill, TeamMember m) throws AddMemberException {
-            if ( m.getSkill() == this.members.peekFirst().getSkill() - 1) {
-                members.addFirst(m);
+            if ( m.getSkill() == this.members.get(0).getSkill() - 1) {
+                members.add(0,m);
             }
-            else if ( m.getSkill() == this.members.peekLast().getSkill() + 1) {
-                members.addLast(m);
+            else if ( m.getSkill() == this.members.get(this.members.size()-1).getSkill() + 1) {
+                members.add(m);
             }
             else throw new AddMemberException();
         }
 
         public void delMember(TeamMember m) throws DeleteMemberException {
-            if ( m == this.members.peekFirst()) {
-                members.pollFirst();
+            List<TeamMember> teamA = this.members.subList(0,this.members.indexOf(m));
+
+            Team lowerTeam = new Team((new Random()).nextInt());
+
+            this.members.removeAll(teamA);
+
+            for (TeamMember member : teamA) {
+                try {
+                    member.setTeam(lowerTeam);
+                } catch (AddMemberException e) {
+                    e.printStackTrace();
+                }
             }
-            else if ( m == this.members.peekLast()) {
-                members.pollLast();
-            }
-            else throw new DeleteMemberException();
+
+            this.members.remove(m);
+
         }
+
+        public TeamMember first() {
+            return this.members.get(0);
+        }
+
+        public TeamMember last() {
+            return this.members.get(members.size()-1);
+        }
+
 
         public int compareTo(Team t) {
             return this.getSize() - t.getSize();
@@ -208,33 +234,67 @@ public class Solution {
             return this.id;
         }
 
-        public Team getTeam() {
+        public Team getTeam() throws NullTeamException {
+            if (team == null) throw new NullTeamException();
             return team;
         }
 
-        public void setTeam(Team team) throws NullTeamException, Team.DeleteMemberException, Team.AddMemberException {
-            if (team == null) {
-                throw new NullTeamException();
-            }
-            try {
-                if (this.team != null)
-                    this.team.delMember(this);
-            } catch (Team.DeleteMemberException e) {
-                throw e;
-            }
-
+        public void setTeam(Team team) throws Team.AddMemberException {
             this.team = team;
             try {
                 this.team.addMember(this.getSkill(), this);
             } catch (Team.AddMemberException e) {
-                throw e;
+                e.printStackTrace();
+                System.exit(100);
             }
+        }
+
+        public NodeLink getMinNeighbor() throws NoLinkException, NoExternalLinkException{
+            try {
+                PriorityQueue<NodeLink> minLink = new PriorityQueue<NodeLink>(this.links);
+                if (minLink.peek().getWeight() == 0) throw new NoExternalLinkException();
+                return minLink.poll();
+            } catch (NullPointerException e) {
+                throw new NoLinkException();
+            } catch (NodeLink.IncompleteLinkException e) {
+                e.printStackTrace();
+                System.exit(100);
+            }
+            return null;
+        }
+
+        public NodeLink getMaxNeighbor() throws NoLinkException, NoExternalLinkException {
+            try {
+                PriorityQueue<NodeLink> maxLink = new PriorityQueue<NodeLink>(this.links.size(), new NodeLinkMaxComparator());
+                if (maxLink.peek().getWeight() == 0) throw new NoExternalLinkException();
+                return maxLink.poll();
+            } catch (NullPointerException e) {
+                throw new NoLinkException();
+            } catch (NodeLink.IncompleteLinkException e) {
+                e.printStackTrace();
+                System.exit(100);
+            }
+            return null;
         }
 
         public class InvalidAdjacentException extends Exception {
         }
 
         private class NullTeamException extends Exception {
+        }
+
+        private class NoLinkException extends Throwable {
+        }
+
+        private class NoExternalLinkException extends Throwable {
+        }
+    }
+
+    public class NodeLinkMaxComparator implements Comparator<NodeLink> {
+
+        @Override
+        public int compare(NodeLink o1, NodeLink o2) {
+            return -(o1.compareTo(o2));
         }
     }
 
@@ -288,8 +348,9 @@ public class Solution {
             this.node.acceptLink(n);
         }
 
-        public void migrateTo() throws IncompleteLinkException, Team.DeleteMemberException, Team.AddMemberException {
+        public void migrateTo() throws IncompleteLinkException {
             try {
+                this.node.getTeam().delMember(this.node);
                 this.node.setTeam(this.link.getNode().getTeam());
             } catch (TeamMember.NullTeamException e) {
                 System.out.println("Null team when adding a team to member " + this.node.getId());
@@ -297,6 +358,12 @@ public class Solution {
                 System.exit(100);
             } catch (NullPointerException e) {
                 throw new IncompleteLinkException();
+            } catch (Team.DeleteMemberException e) {
+                e.printStackTrace();
+                System.exit(100);
+            } catch (Team.AddMemberException e) {
+                e.printStackTrace();
+                System.exit(100);
             }
         }
 
